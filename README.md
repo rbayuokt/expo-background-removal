@@ -1,15 +1,16 @@
 # @rbayuokt/expo-background-removal
 
-Cut the subject out of a product photo on device and get back a transparent PNG.
-Point it at a local image, it runs the platform's own segmentation model, writes the
-result into the app cache directory and hands JavaScript a `file://` URI. No pixels,
-masks or base64 cross the bridge.
+Cut the subject out of a photo on device and get back a transparent PNG. Point it at a
+local image, it runs the platform's own segmentation model, writes the result into the app
+cache directory and hands JavaScript a `file://` URI. No pixels, masks or base64 cross the
+bridge.
 
-iOS uses Vision's `VNGenerateForegroundInstanceMaskRequest`, Android uses ML Kit
-Subject Segmentation. Both target general objects (shoes, bags, bottles, furniture),
-not faces or people specifically.
+iOS uses Vision's `VNGenerateForegroundInstanceMaskRequest`. Android uses ML Kit Subject
+Segmentation. Both target general objects (shoes, bags, bottles, furniture), not faces or
+people specifically, and both return separate instances when there is more than one
+subject in frame.
 
-## Quick start
+## Install
 
 ```bash
 npx expo install @rbayuokt/expo-background-removal
@@ -17,21 +18,74 @@ npx expo prebuild        # regenerates ios/ and android/, runs pod install
 npx expo run:ios         # or run:android
 ```
 
-Autolinking picks the module up from the scope on its own. Note the Gradle project is
-named after the scope too, so an Android task is
-`:rbayuokt-expo-background-removal:compileDebugKotlin`.
-
 There is native code here, so it does not run in Expo Go. Use a development build.
 
 If your app already has an `ios/` directory, `expo run:ios` will not pick up the new pod
 on its own: CocoaPods is driven by prebuild, not by `run`. Run `npx expo prebuild` or
 `npx pod-install` once after installing.
 
-```ts
-import { removeBackground } from '@rbayuokt/expo-background-removal';
+Autolinking finds the module from the scope on its own. The Gradle project is named after
+the scope too, so an Android task is `:rbayuokt-expo-background-removal:compileDebugKotlin`.
 
-const { uri, width, height } = await removeBackground(asset.uri);
+## Usage without the effect
+
+Pick a photo, cut the subject out, show it:
+
+```tsx
+import { removeBackground } from '@rbayuokt/expo-background-removal';
+import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'react-native';
+
+const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] });
+if (!picked.canceled) {
+  const { uri, width, height } = await removeBackground(picked.assets[0].uri);
+  return <Image source={{ uri }} style={{ width: 300, height: 300 }} resizeMode="contain" />;
+}
 ```
+
+That is the whole surface for the common case. The PNG is on disk with real alpha, ready
+to upload, save or composite.
+
+## Usage with the effect
+
+The particle reveal ships in the package behind its own entry point:
+
+```bash
+npx expo install @shopify/react-native-skia react-native-reanimated
+```
+
+```tsx
+import { SubjectReveal } from '@rbayuokt/expo-background-removal/effects';
+
+<SubjectReveal source={picked.assets[0].uri} style={{ width: 340, height: 400 }} />
+```
+
+One component does the whole sequence: normalise the photo through `toPng`, run
+`segmentImage`, sweep a scan across it while that runs, then bloom the subject and turn
+the background into particles. It measures itself, so give it a size and nothing else.
+
+To drive it by hand:
+
+```tsx
+const reveal = useRef<SubjectRevealHandle>(null);
+
+<SubjectReveal ref={reveal} source={uri} autoRun={false} duration={2600} style={...} />
+
+reveal.current?.run();     // segment now
+reveal.current?.play();    // background away
+reveal.current?.snap();    // subject too
+reveal.current?.reset();   // back to the photo
+```
+
+Pass `result` when the app already ran `segmentImage()` and wants the reveal for that exact
+output, instead of segmenting twice. `Disintegrate` and `Scanner` are exported as well, for
+driving the layers from your own shared values.
+
+Skia and Reanimated are **optional peer dependencies**. Nothing in the main entry
+references them, so `removeBackground()` on its own adds no Skia to your bundle.
+
+One version trap: Reanimated 4.2.x needs `react-native-worklets` 0.7.x, and `expo install`
+may resolve 0.8.x, which fails at `pod install` with "Failed to validate worklets version".
 
 ## API
 
@@ -45,11 +99,13 @@ toPng(uri: string, options?: ProcessOptions): Promise<RemoveBackgroundResult>
 ```
 
 `removeBackground` merges every detected subject into one PNG. `cropToSubject` (default
-`false`) keeps the original canvas and sets background pixels to alpha 0; set it to
-`true` to crop to the subject bounds instead.
+`false`) keeps the original canvas and sets background pixels to alpha 0; set it to `true`
+to crop to the subject bounds instead.
 
 `segmentImage` returns two files from one segmentation pass: `foregroundUri` with the
-subject on transparency, `backgroundUri` with the subject punched out.
+subject on transparency, `backgroundUri` with the subject punched out. Reach for it when
+you need both halves, such as replacing or blurring a background. It is also what the
+reveal effect uses, since particles need a real background plate to eat.
 
 `extractObjects` returns one cropped PNG per detected subject. Both platforms do real
 instance separation, so three objects in frame give three files.
@@ -64,8 +120,8 @@ values cut peak memory and time; thin edges (hair, straps, cables) lose detail.
 
 ## BackgroundRemovalView
 
-Apple's own subject lifting, through VisionKit's `ImageAnalysisInteraction`. Long press a
-subject on iOS 17+ and it lifts out with the system glow, the same gesture Photos uses.
+Apple's own subject lifting, through VisionKit's `ImageAnalysisInteraction`. Press and hold
+a subject on iOS 17+ and it lifts out with the system glow, the same gesture Photos uses.
 Setting `highlightSubjects` plays that highlight animation without a gesture, and
 `onSubjects` reports how many the system found.
 
@@ -85,13 +141,13 @@ the image and ignores `highlightSubjects`, which keeps the JSX identical on both
 ## Input and output
 
 Input is a local `file://` URI on both platforms, plus `content://` on Android, which is
-what the system photo picker usually returns. JPEG, PNG, WebP and HEIC/HEIF decode
-wherever the OS supports them. EXIF orientation is normalised before segmentation, so a
-portrait iPhone photo comes back upright rather than rotated or mirrored.
+what the system photo picker usually returns. JPEG, PNG, WebP and HEIC/HEIF decode wherever
+the OS supports them. EXIF orientation is normalised before segmentation, so a portrait
+iPhone photo comes back upright rather than rotated or mirrored.
 
 Output is always a PNG with a real alpha channel, written to
-`<cache>/background-removal/<uuid>.png`. Files are not deleted automatically. Move
-anything you want to keep out of the cache directory.
+`<cache>/background-removal/<uuid>.png`. Files are not deleted automatically. Move anything
+you want to keep out of the cache directory.
 
 ## Errors
 
@@ -125,94 +181,56 @@ try {
 | Minimum | iOS 17 | API 24 |
 | Engine | Vision, `VNGenerateForegroundInstanceMaskRequest` | ML Kit Subject Segmentation 16.0.0-beta1 |
 | Model | On device, part of the OS | Downloaded through Google Play services |
-| Simulator | Not supported, the request has no CPU path | Emulator works with Play services |
+| Simulator | Not supported, the request has no CPU path | Emulator works if the image has Play services |
 
-The ML Kit API is still beta and the model is unbundled, so the first call on a device
-can fail until Play services has fetched it. The module declares the
-`com.google.mlkit.vision.DEPENDENCIES` manifest hint so the download starts at install
-time.
-
-On iOS below 17 every call rejects with `UNSUPPORTED_OS`. The podspec floor is 15.1, so
-the module installs into any modern Expo app without forcing its deployment target up.
+On iOS below 17 every call rejects with `UNSUPPORTED_OS`. The podspec floor is 15.1, so the
+module installs into any modern Expo app without forcing its deployment target up.
 Everything that touches Vision is behind `@available(iOS 17.0, *)`.
 
-## Toolchain
+The ML Kit API is still beta and the model is unbundled, so the first call on a device can
+fail until Play services has fetched it. The module declares the
+`com.google.mlkit.vision.DEPENDENCIES` manifest hint so the download starts at install time.
 
-The example pins **Expo SDK 55** (`expo ~55.0.31`, React Native 0.83.10). SDK 56 and 57
-ship `expo-modules-jsi` written with `weak let`, a Swift 6.3 feature, so building them
-from source needs an Xcode with Swift 6.3.1 or newer. SDK 55 compiles on Swift 6.2.1
-(Xcode 26.1), which is what this repo is verified against:
+Its whole-frame outputs, `foregroundBitmap` and `foregroundConfidenceMask`, shear the image
+on some devices and can segfault inside its native code:
 
 ```
-ExpoBackgroundRemoval pod        BUILD SUCCEEDED
-expobackgroundremovalexample     BUILD SUCCEEDED
-:@rbayuokt/expo-background-removal:compileDebugKotlin   BUILD SUCCESSFUL
+Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7deba00000
+  com.google.mlkit.vision.segmentation.subject.internal.zzj.zze
 ```
 
-Nothing in the module's own Swift or Kotlin is SDK 55 specific, so raise the example once
-your Xcode is new enough.
+The per-subject bitmaps are unaffected, so both halves are composed from those: each
+subject is drawn onto a transparent canvas for the foreground, and punched out of a copy of
+the original with `PorterDuff.Mode.DST_OUT` for the background. That also makes the two
+halves exact complements.
 
-## The reveal effect
-
-The particle effect ships with the package, behind its own entry point so the main entry
-stays free of Skia:
-
-```bash
-npx expo install @shopify/react-native-skia react-native-reanimated
-```
-
-```tsx
-import { SubjectReveal } from '@rbayuokt/expo-background-removal/effects';
-
-<SubjectReveal source={asset.uri} style={{ width: 340, height: 400 }} />
-```
-
-That one component does the whole sequence: normalise the photo through `toPng`, run
-`segmentImage`, sweep a scan across it while that runs, then bloom the subject and turn
-the background into particles. It measures itself, so give it a size and nothing else.
-
-```tsx
-const reveal = useRef<SubjectRevealHandle>(null);
-
-<SubjectReveal ref={reveal} source={uri} autoPlay={false} duration={2600} glow style={…} />
-
-reveal.current?.play();    // background away
-reveal.current?.snap();    // subject too
-reveal.current?.reset();   // back to the photo
-```
-
-`Disintegrate` and `Scanner` are exported as well, for driving the layers from your own
-shared values.
-
-Both libraries are **optional peer dependencies**: install them only if you import
-`/effects`. Nothing in the main entry references them, so `removeBackground()` on its own
-adds no Skia to your bundle.
-
-One version trap worth knowing: Reanimated 4.2.x needs `react-native-worklets` 0.7.x, and
-`expo install` may resolve 0.8.x, which fails at `pod install` with "Failed to validate
-worklets version". Pin it if you hit that.
+Edge quality still differs. Vision runs a heavier model on the Neural Engine; ML Kit is
+tuned for roughly 200ms on a Pixel 7 Pro. Hair and fur are where the gap shows. ML Kit also
+merges subjects that touch, and targets objects, pets and humans only.
 
 ## Threading
 
-Every function is an Expo `AsyncFunction`, so nothing runs on the JS thread. iOS work
-runs on a queue owned by this module rather than the shared Expo async queue. Android
-work is a coroutine dispatched onto `Dispatchers.Default`, and ML Kit's `Task` is
-awaited through `suspendCancellableCoroutine` rather than polled.
+Every function is an Expo `AsyncFunction`, so nothing runs on the JS thread. iOS work runs
+on a queue owned by this module rather than the shared Expo async queue. Android work is a
+coroutine dispatched onto `Dispatchers.Default`, and ML Kit's `Task` is awaited through
+`suspendCancellableCoroutine` rather than polled.
 
 ## Architecture
 
 ```text
 src/                     TypeScript API and types
+src/effects/             optional Skia and Reanimated reveal, published as /effects
 ios/
   ExpoBackgroundRemovalModule.swift    module definition, records, availability gate
   BackgroundRemovalProcessor.swift     decode, Vision, compositing, PNG
+  ExpoBackgroundRemovalView.swift      VisionKit subject lifting
   BackgroundRemovalError.swift         error codes
 android/src/main/java/expo/modules/backgroundremoval/
   ExpoBackgroundRemovalModule.kt       module definition, records, coroutine dispatch
   BackgroundRemovalProcessor.kt        URI resolution, decode, ML Kit, PNG
+  ExpoBackgroundRemovalView.kt         image only, no lifting on Android
   BackgroundRemovalException.kt        error codes
-src/effects/             optional Skia + Reanimated reveal, published as /effects
-example/                 development app, autolinks the module from ..
+example/                 development app, links the module with file:..
 ```
 
 The shape in one line: the module files only convert arguments and pick a queue, every
@@ -224,8 +242,34 @@ The iOS pipeline goes: `CGImageSource` decode with the EXIF transform baked in �
 `CIContext.writePNGRepresentation` as RGBA8.
 
 The Android pipeline goes: resolve `content://` to a cache file → bounds decode →
-`inSampleSize` → exact scale → EXIF matrix → `SubjectSegmentation` → foreground bitmap
-or per subject bitmaps → `Bitmap.compress` as PNG.
+`inSampleSize` → exact scale → EXIF matrix → `SubjectSegmentation` → compose the subject
+bitmaps → `Bitmap.compress` as PNG.
+
+## The reveal effect
+
+`example/App.tsx` renders results through the package's own `Disintegrate`, a Skia canvas
+that turns the background into particles and leaves the subject standing.
+
+Four layers: a blurred copy of the plate so the end state is soft rather than a hole, the
+sharp plate above it running an SkSL shader, a bloom that flashes around the silhouette,
+and the cutout on top. The bloom is a zero-offset drop shadow with `shadowOnly`, so it is
+the halo alone with no second copy of the subject in it; its blur grows as its opacity
+falls, so it reads as a pulse rather than a rim. It leads the dissolve by 260ms.
+
+The shader sweeps a front down the image, and behind that front each 2px grain is dropped
+at its own random moment, so the plate breaks into fine speckle instead of fading as a
+sheet. The only uniform, `progress`, is a Reanimated shared value driven by `withTiming`,
+so the whole animation runs on the UI thread.
+
+## Toolchain
+
+The example pins **Expo SDK 55** (`expo ~55.0.31`, React Native 0.83.10). SDK 56 and 57
+ship `expo-modules-jsi` written with `weak let`, a Swift 6.3 feature, so building them from
+source needs an Xcode with Swift 6.3.1 or newer. SDK 55 compiles on Swift 6.2.1
+(Xcode 26.1), which is what this repo is verified against.
+
+Nothing in the module's own Swift or Kotlin is SDK 55 specific, so raise the example once
+your Xcode is new enough.
 
 ## Scripts
 
@@ -236,7 +280,7 @@ or per subject bitmaps → `Bitmap.compress` as PNG.
 | `npm run clean` | Remove `build/` |
 | `npm run lint` | ESLint over `src/` |
 | `npm run test` | Jest |
-| `npm run example:ios` | Build the module, install the example, run it on iOS |
+| `npm run example:ios` | Install the example and run it on iOS |
 | `npm run example:android` | Same for Android |
 | `npm run open:ios` | Open `example/ios` in Xcode |
 | `npm run open:android` | Open `example/android` in Android Studio |
@@ -259,47 +303,22 @@ Or from inside `example` itself:
 | `npm run android` | Rebuild the module, then `expo run:android` |
 | `npm start` | Metro only, for JS-only changes |
 
-Every native script runs the module's one-shot `prepare` build first, so the example can never run against a
-stale copy of the module's JavaScript.
+Every native script runs the module's one-shot `prepare` build first, so the example can
+never run against a stale copy of the module's JavaScript.
 
-The example depends on the module as `"@rbayuokt/expo-background-removal": "file:.."`, which is
-what puts it in `node_modules` for autolinking and Metro to find. `example/ios` and
-`example/android` are not committed, so the first run regenerates them with prebuild,
-which also installs pods. Nothing in there is hand written, so
-`npx expo prebuild --clean` inside `example` is always safe: the module's native code
-lives in `ios/` and `android/` at the repo root.
+The example depends on the module as `"@rbayuokt/expo-background-removal": "file:.."`,
+which is what puts it in `node_modules` for autolinking and Metro to find. `example/ios`
+and `example/android` are not committed, so the first run regenerates them with prebuild,
+which also installs pods. Nothing in there is hand written, so `npx expo prebuild --clean`
+inside `example` is always safe: the module's native code lives in `ios/` and `android/` at
+the repo root.
 
-`example/App.tsx` picks an image with `expo-image-picker`, normalises it through `toPng`
-so every layer is Skia-loadable, and runs all three functions.
+The app picks a photo, normalises it through `toPng` so every layer is Skia-loadable, and
+runs each call from a sheet. Results appear as specimens on a checkerboard, and each call
+logs its timing to the console.
 
-`removeBackground` and `segmentImage` results render through the package's own
-`Disintegrate`, a Skia canvas that turns the background into particles and leaves the
-subject standing.
-
-Four layers: a blurred copy of the plate at the bottom so the end state is soft rather
-than a hole, the sharp background above it running an SkSL shader, a bloom that flashes
-around the silhouette, and the cutout subject on top. The bloom is a zero-offset drop
-shadow with `shadowOnly`, so it is the halo alone with no second copy of the subject in
-it; its blur grows as its opacity falls, which is what makes it read as a pulse rather
-than a rim. It leads the dissolve by 260ms. The shader sweeps a front down the image, and behind that front each 2px grain is
-dropped at its own random moment, so the plate breaks into fine speckle instead of fading
-as a sheet. Surviving grains lift slightly and glint before they go. The subject layer
-runs the same shader on its own uniform, which is what the Snap button drives.
-
-The only uniform, `progress`, is a Reanimated shared value driven by `withTiming`, so the
-whole animation runs on the UI thread.
-
-That effect only works because `segmentImage()` hands back the foreground and background
-as separate layers with real alpha. The module itself has no Skia or Reanimated
-dependency; those live in the example.
-
-There is also a **Snap demo (no segmentation)** button that runs the shader straight on
-the picked photo. It needs no model, so the animation can be checked on the iOS
-Simulator, where Vision cannot run.
-
-The **Apple subject lift** switch swaps the whole stage for `BackgroundRemovalView`, so
-you can compare the system effect against the shader. Skia is only needed for the shader
-half; the native view has no dependencies at all.
+Vision needs a real device: the request has no CPU path, so `removeBackground()` on the iOS
+Simulator always rejects with `SEGMENTATION_FAILED`.
 
 ---
 

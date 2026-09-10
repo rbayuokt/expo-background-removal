@@ -1,7 +1,7 @@
 {
   "name": "@rbayuokt/expo-background-removal",
   "version": "0.1.0",
-  "description": "Background removal and foreground subject extraction for Expo apps",
+  "description": "On-device background removal and subject cutout for Expo. Apple Vision on iOS, Google ML Kit on Android, transparent PNG out.",
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "scripts": {

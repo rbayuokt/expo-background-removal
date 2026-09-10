@@ -52,7 +52,7 @@ public class ExpoBackgroundRemovalModule: Module {
     }
     .runOnQueue(processingQueue)
 
-    // Apple's native subject lifting. iOS only; on Android the view just shows the image.
+    // Apple's native subject lifting.
     View(ExpoBackgroundRemovalView.self) {
       Events("onSubjects", "onLoad")
 

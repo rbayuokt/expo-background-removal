@@ -3,11 +3,9 @@ import UIKit
 import VisionKit
 
 /**
- Apple's own subject lifting, the effect Photos uses: long press a subject and it lifts
- out with the system glow. `highlightSubjects` drives the same animation programmatically.
-
- VisionKit only, no Vision request and no file written - this is a live view, not a
- replacement for `removeBackground()`.
+ Apple's subject lifting: press and hold a subject and it lifts out with the system glow,
+ and `highlightSubjects` plays the same animation without a gesture. A live view, so it
+ writes no file; `removeBackground()` is what produces a PNG.
  */
 public final class ExpoBackgroundRemovalView: ExpoView {
   private let imageView = UIImageView()

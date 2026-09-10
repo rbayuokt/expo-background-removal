@@ -3,7 +3,11 @@ package expo.modules.backgroundremoval
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
@@ -17,7 +21,6 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
-import java.nio.FloatBuffer
 import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -41,18 +44,17 @@ internal class BackgroundRemovalProcessor(
       val bitmap = decodeUpright(input.file, maxDimension)
       try {
         val options = SubjectSegmenterOptions.Builder()
-          .enableForegroundBitmap()
-          .enableMultipleSubjects(SubjectSegmenterOptions.SubjectResultOptions.Builder().build())
+          .enableMultipleSubjects(subjectBitmaps())
           .build()
 
         return withSegmentation(bitmap, options) { result ->
           val subjects = requireSubjects(result)
-          val foreground = result.foregroundBitmap
-            ?: throw BackgroundRemovalException(ErrorCodes.SEGMENTATION_FAILED, "ML Kit returned no foreground bitmap.")
+          val foreground = composeSubjects(subjects, bitmap.width, bitmap.height)
 
-          if (!cropToSubject) {
-            writePng(foreground)
-          } else {
+          try {
+            if (!cropToSubject) {
+              writePng(foreground)
+            } else {
             val bounds = subjectBounds(subjects, foreground.width, foreground.height)
             val cropped = Bitmap.createBitmap(
               foreground,
@@ -61,13 +63,16 @@ internal class BackgroundRemovalProcessor(
               bounds.width(),
               bounds.height()
             )
-            try {
-              writePng(cropped)
-            } finally {
-              if (cropped !== foreground) {
-                cropped.recycle()
+              try {
+                writePng(cropped)
+              } finally {
+                if (cropped !== foreground) {
+                  cropped.recycle()
+                }
               }
             }
+          } finally {
+            foreground.recycle()
           }
         }
       } finally {
@@ -102,20 +107,19 @@ internal class BackgroundRemovalProcessor(
       val bitmap = decodeUpright(input.file, maxDimension)
       try {
         val options = SubjectSegmenterOptions.Builder()
-          .enableForegroundBitmap()
-          .enableForegroundConfidenceMask()
-          .enableMultipleSubjects(SubjectSegmenterOptions.SubjectResultOptions.Builder().build())
+          .enableMultipleSubjects(subjectBitmaps())
           .build()
 
         return withSegmentation(bitmap, options) { result ->
-          requireSubjects(result)
-          val foreground = result.foregroundBitmap
-            ?: throw BackgroundRemovalException(ErrorCodes.SEGMENTATION_FAILED, "ML Kit returned no foreground bitmap.")
-          val mask = result.foregroundConfidenceMask
-            ?: throw BackgroundRemovalException(ErrorCodes.SEGMENTATION_FAILED, "ML Kit returned no confidence mask.")
+          val subjects = requireSubjects(result)
 
-          val foregroundOutput = writePng(foreground)
-          val background = buildBackground(bitmap, mask)
+          val foreground = composeSubjects(subjects, bitmap.width, bitmap.height)
+          val foregroundOutput = try {
+            writePng(foreground)
+          } finally {
+            foreground.recycle()
+          }
+          val background = punchSubjects(bitmap, subjects)
           val backgroundOutput = try {
             writePng(background)
           } finally {
@@ -174,9 +178,8 @@ internal class BackgroundRemovalProcessor(
   }
 
   /**
-   * `content://` from a photo picker is not a filesystem path, so it goes through the
-   * ContentResolver and lands in a temp file we own (BitmapFactory + ExifInterface both
-   * need to read the source twice).
+   * `content://` from a photo picker is not a filesystem path, and BitmapFactory plus
+   * ExifInterface both need to read the source, so it lands in a temp file first.
    */
   private fun resolveInput(uri: String): ResolvedInput {
     if (uri.isBlank()) {
@@ -357,27 +360,33 @@ internal class BackgroundRemovalProcessor(
     return bounds
   }
 
-  /**
-   * Background = original pixels, alpha driven by the inverse of the foreground confidence.
-   * Done a row at a time so a 12MP image never needs a second full ARGB int array.
-   */
-  private fun buildBackground(source: Bitmap, mask: FloatBuffer): Bitmap {
-    val width = source.width
-    val height = source.height
-    if (mask.capacity() < width * height) {
-      throw BackgroundRemovalException(ErrorCodes.IMAGE_RENDER_FAILED, "The confidence mask does not match the image size.")
-    }
+  private fun subjectBitmaps() =
+    SubjectSegmenterOptions.SubjectResultOptions.Builder().enableSubjectBitmap().build()
 
+  /**
+   * ML Kit's whole-frame outputs (`foregroundBitmap`, `foregroundConfidenceMask`) shear the
+   * image on some devices and can segfault inside its native code, so both halves are
+   * built from the per-subject bitmaps instead.
+   */
+  private fun composeSubjects(subjects: List<Subject>, width: Int, height: Int): Bitmap {
     val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val row = IntArray(width)
-    var index = 0
-    for (y in 0 until height) {
-      source.getPixels(row, 0, width, 0, y, width, 1)
-      for (x in 0 until width) {
-        val alpha = ((1f - mask.get(index++)) * 255f).toInt().coerceIn(0, 255)
-        row[x] = (alpha shl 24) or (row[x] and 0x00FFFFFF)
-      }
-      output.setPixels(row, 0, width, 0, y, width, 1)
+    val canvas = Canvas(output)
+    subjects.forEach { subject ->
+      val bitmap = subject.bitmap
+        ?: throw BackgroundRemovalException(ErrorCodes.SEGMENTATION_FAILED, "ML Kit returned no bitmap for a subject.")
+      canvas.drawBitmap(bitmap, subject.startX.toFloat(), subject.startY.toFloat(), null)
+    }
+    return output
+  }
+
+  /** The original with each subject punched out, so the two halves are exact complements. */
+  private fun punchSubjects(source: Bitmap, subjects: List<Subject>): Bitmap {
+    val output = source.copy(Bitmap.Config.ARGB_8888, true)
+    val canvas = Canvas(output)
+    val eraser = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_OUT) }
+    subjects.forEach { subject ->
+      val bitmap = subject.bitmap ?: return@forEach
+      canvas.drawBitmap(bitmap, subject.startX.toFloat(), subject.startY.toFloat(), eraser)
     }
     return output
   }

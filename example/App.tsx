@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -53,7 +54,6 @@ export default function App() {
     AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
   }, []);
 
-  // Motion that answers the tap, showing where the calls came from.
   useEffect(() => {
     Animated.timing(slide, {
       toValue: open ? 1 : 0,
@@ -62,7 +62,6 @@ export default function App() {
     }).start();
   }, [open, reduceMotion, slide]);
 
-  /** Back to the untouched photo: the reveal, the specimens and the note all go. */
   function resetAll() {
     clearTimeout(hold.current);
     pending.current = null;
@@ -196,15 +195,18 @@ export default function App() {
   return (
     <View style={styles.screen}>
       {source ? (
-        // The wall takes its colour from the photo rather than flat paint.
+        // The wall takes its colour from the photo rather than flat paint. Android's
+        // blur shreds a full-screen bitmap on some devices, so it keeps the flat wall.
         <>
-          <Image
-            source={{ uri: source }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            blurRadius={64}
-            transition={220}
-          />
+          {Platform.OS === 'ios' ? (
+            <Image
+              source={{ uri: source }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              blurRadius={64}
+              transition={220}
+            />
+          ) : null}
           <View style={styles.veil} />
         </>
       ) : null}
@@ -371,8 +373,7 @@ export default function App() {
           <Switch
             value={appleLift}
             onValueChange={(value) => {
-              // Clear the reveal first, so switching modes never leaves a stale cutout
-              // or a pending result behind.
+              // Reset first, or switching modes keeps a stale cutout on screen.
               resetAll();
               setAppleLift(value);
               setOpen(false);
@@ -402,8 +403,8 @@ export default function App() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: color.wall },
-  // The sharp picture sits inside the safe area and centres there; the blurred
-  // enlargement behind it runs full bleed, under the status bar and the dock.
+  // Inset so the picture centres inside the safe area, while the blurred enlargement
+  // behind it runs full bleed.
   stage: { position: 'absolute', top: 58, left: 0, right: 0, bottom: 112 },
   veil: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(222,227,213,0.26)' },
 

@@ -1,9 +1,6 @@
 import { Platform } from 'react-native';
 
-/**
- * A gallery wall, not an editor. The product lifts a subject out of a photograph, which
- * is the language of cut-out photomontage: flat colour, a mounted print, large type.
- */
+/** A gallery wall rather than an editor: flat colour, a mounted print, large type. */
 export const color = {
   wall: '#DEE3D5',
   wallDeep: '#D1D8C4',

@@ -52,7 +52,7 @@ class ExpoBackgroundRemovalModule : Module() {
       }
     }
 
-    // Present for API parity: on Android it only renders the image, see the view's docs.
+    // API parity with iOS; on Android the view only renders the image.
     View(ExpoBackgroundRemovalView::class) {
       Events("onSubjects", "onLoad")
 
