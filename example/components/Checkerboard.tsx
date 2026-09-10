@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
-import { color } from './theme';
+import { color } from '../theme';
 
 const TILE = 12;
 
