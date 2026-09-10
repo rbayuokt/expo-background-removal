@@ -13,10 +13,8 @@ internal struct ProcessedImage {
 }
 
 /**
- Vision-based foreground extraction.
-
  `VNGenerateForegroundInstanceMaskRequest` lives in Vision (not VisionKit) and is iOS 17+.
- It has no CPU fallback, so it fails on the iOS Simulator - test on a device.
+ It has no CPU fallback, so it fails on the Simulator and needs a device.
  */
 @available(iOS 17.0, *)
 internal final class BackgroundRemovalProcessor {
