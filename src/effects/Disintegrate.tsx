@@ -83,6 +83,8 @@ export function Disintegrate({
 
   // Swelling as it fades reads as a bloom; a fixed blur reads as a static rim.
   const glowBlur = useDerivedValue(() => 6 + 40 * pulse.value + 10 * dust.value, []);
+  // The subject swells with its halo and settles back: a pop that does not quite go off.
+  const pop = useDerivedValue(() => [{ scale: 1 + 0.045 * pulse.value }], []);
   const glowOpacity = useDerivedValue(
     () => Math.min(1, pulse.value * 0.85 + dust.value * 0.3) * (1 - keepDust.value),
     []
@@ -131,29 +133,31 @@ export function Disintegrate({
           </>
         ) : null}
 
-        {keepImage && glow ? (
-          // The layer's alpha is the silhouette, so a zero-offset drop shadow traces it.
-          // shadowOnly keeps the subject from being drawn twice.
-          <Group
-            layer={
-              <Paint opacity={glowOpacity}>
-                <Shadow dx={0} dy={0} blur={glowBlur} color="rgb(255,244,224)" shadowOnly />
-              </Paint>
-            }>
+        {keepImage ? (
+          <Group transform={pop} origin={{ x: width / 2, y: height / 2 }}>
+            {glow ? (
+              // The layer's alpha is the silhouette, so a zero-offset drop shadow traces it.
+              // shadowOnly keeps the subject from being drawn twice.
+              <Group
+                layer={
+                  <Paint opacity={glowOpacity}>
+                    <Shadow dx={0} dy={0} blur={glowBlur} color="rgb(255,244,224)" shadowOnly />
+                  </Paint>
+                }>
+                <Fill>
+                  <Shader source={dissolveShader} uniforms={keepUniforms}>
+                    <ImageShader image={keepImage} fit={fit} rect={rect} tx="decal" ty="decal" />
+                  </Shader>
+                </Fill>
+              </Group>
+            ) : null}
+
             <Fill>
               <Shader source={dissolveShader} uniforms={keepUniforms}>
-                <ImageShader image={keepImage} fit="contain" rect={rect} tx="decal" ty="decal" />
+                <ImageShader image={keepImage} fit={fit} rect={rect} tx="decal" ty="decal" />
               </Shader>
             </Fill>
           </Group>
-        ) : null}
-
-        {keepImage ? (
-          <Fill>
-            <Shader source={dissolveShader} uniforms={keepUniforms}>
-              <ImageShader image={keepImage} fit="contain" rect={rect} tx="decal" ty="decal" />
-            </Shader>
-          </Fill>
         ) : null}
       </Canvas>
     </View>

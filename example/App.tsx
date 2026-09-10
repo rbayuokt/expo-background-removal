@@ -11,8 +11,6 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useRef, useState } from 'react';
 import {
-  AccessibilityInfo,
-  Animated,
   Platform,
   Pressable,
   ScrollView,
@@ -21,6 +19,14 @@ import {
   Text,
   View,
 } from 'react-native';
+
+import Animated, {
+  interpolate,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { Checkerboard } from './Checkerboard';
 import { color, font } from './theme';
@@ -42,25 +48,24 @@ export default function App() {
   const [segmented, setSegmented] = useState<SegmentationResult | null>(null);
   const [open, setOpen] = useState(false);
   const [sheetHeight, setSheetHeight] = useState(440);
-  const [reduceMotion, setReduceMotion] = useState(false);
+
   const reveal = useRef<SubjectRevealHandle>(null);
-  const slide = useRef(new Animated.Value(0)).current;
+  const slide = useSharedValue(0);
+  const reduceMotion = useReducedMotion();
   const pending = useRef<{ summary: string; files: Specimen[] } | null>(null);
   const hold = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => () => clearTimeout(hold.current), []);
 
   useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
-  }, []);
-
-  useEffect(() => {
-    Animated.timing(slide, {
-      toValue: open ? 1 : 0,
-      duration: reduceMotion ? 0 : 240,
-      useNativeDriver: true,
-    }).start();
+    slide.value = withTiming(open ? 1 : 0, { duration: reduceMotion ? 0 : 240 });
   }, [open, reduceMotion, slide]);
+
+  const scrimStyle = useAnimatedStyle(() => ({ opacity: slide.value }));
+  const sheetStyle = useAnimatedStyle(() => ({
+    opacity: slide.value,
+    transform: [{ translateY: interpolate(slide.value, [0, 1], [sheetHeight, 0]) }],
+  }));
 
   function resetAll() {
     clearTimeout(hold.current);
@@ -78,11 +83,7 @@ export default function App() {
     setFailed(isFailure);
   }
 
-  async function choosePhoto() {
-    const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
-    if (picked.canceled) {
-      return;
-    }
+  function accept(uri: string) {
     clearTimeout(hold.current);
     pending.current = null;
     setOpen(false);
@@ -90,7 +91,26 @@ export default function App() {
     setSegmented(null);
     setRan(null);
     setNote(null);
-    setSource(picked.assets[0].uri);
+    setSource(uri);
+  }
+
+  async function choosePhoto() {
+    const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
+    if (!picked.canceled) {
+      accept(picked.assets[0].uri);
+    }
+  }
+
+  async function takePhoto() {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      say('Camera access is off. Turn it on in Settings to shoot a photo.', true);
+      return;
+    }
+    const shot = await ImagePicker.launchCameraAsync({ quality: 1 });
+    if (!shot.canceled) {
+      accept(shot.assets[0].uri);
+    }
   }
 
   async function run(name: string, call: () => Promise<CallResult>) {
@@ -101,7 +121,7 @@ export default function App() {
     setOpen(false);
     setBusy(true);
     setSpecimens([]);
-    say(`Running ${name}`);
+    setNote(null);
     const startedAt = Date.now();
     try {
       const { files, reveals } = await call();
@@ -212,7 +232,7 @@ export default function App() {
       ) : null}
 
       <View style={styles.stage}>
-      {source == null ? (
+        {source == null ? (
         <View style={styles.empty}>
           <Text style={styles.emptyDisplay}>Lift the subject{'\n'}out of the photograph.</Text>
           <Text style={styles.emptyBody}>
@@ -239,6 +259,7 @@ export default function App() {
           key={source}
           source={source}
           autoRun={false}
+          busy={busy}
           result={segmented}
           style={StyleSheet.absoluteFill}
           onRevealed={() => {
@@ -291,48 +312,56 @@ export default function App() {
           </ScrollView>
         ) : null}
 
-        <View style={styles.dock}>
-          <Pressable
-            style={({ pressed }) => [styles.choose, pressed && styles.pressedCobalt]}
-            onPress={choosePhoto}
-            disabled={busy}>
-            <Text style={styles.chooseLabel}>{source ? 'Change photo' : 'Choose a photo'}</Text>
-          </Pressable>
-
-          {source ? (
+        {source == null ? (
+          // Nothing to act on yet, so both sources get the full width.
+          <View style={styles.dockStacked}>
             <Pressable
-              style={({ pressed }) => [styles.callsButton, pressed && styles.pressedBone]}
+              style={({ pressed }) => [styles.primary, pressed && styles.pressedCobalt]}
+              onPress={choosePhoto}>
+              <Text style={styles.primaryLabel}>Choose a photo</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.secondary, pressed && styles.pressedBone]}
+              onPress={takePhoto}>
+              <Text style={styles.secondaryLabel}>Take a photo</Text>
+            </Pressable>
+          </View>
+        ) : (
+          // With a photo on screen, running a call is the primary action and the two
+          // sources shrink to the left.
+          <View style={styles.dock}>
+            <Pressable
+              style={({ pressed }) => [styles.compact, pressed && styles.pressedBone]}
+              onPress={choosePhoto}
+              disabled={busy}>
+              <Text style={styles.secondaryLabel}>Photos</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.compact, pressed && styles.pressedBone]}
+              onPress={takePhoto}
+              disabled={busy}>
+              <Text style={styles.secondaryLabel}>Camera</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.primary, styles.grow, pressed && styles.pressedCobalt]}
               onPress={() => setOpen((value) => !value)}
               disabled={busy}>
-              <Text style={styles.callsLabel}>{open ? 'Close' : 'Calls'}</Text>
+              <Text style={styles.primaryLabel}>{open ? 'Close' : 'Calls'}</Text>
             </Pressable>
-          ) : null}
-        </View>
+          </View>
+        )}
       </View>
 
       {open ? (
         <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)}>
-          <Animated.View style={[styles.scrim, { opacity: slide }]} />
+          <Animated.View style={[styles.scrim, scrimStyle]} />
         </Pressable>
       ) : null}
 
       <Animated.View
         pointerEvents={open ? 'auto' : 'none'}
         onLayout={(event) => setSheetHeight(event.nativeEvent.layout.height)}
-        style={[
-          styles.sheet,
-          {
-            opacity: slide,
-            transform: [
-              {
-                translateY: slide.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [sheetHeight, 0],
-                }),
-              },
-            ],
-          },
-        ]}>
+        style={[styles.sheet, sheetStyle]}>
         {calls.map((call, index) => (
           <Pressable
             key={call.name}
@@ -458,25 +487,34 @@ const styles = StyleSheet.create({
     textShadowRadius: 3,
   },
 
-  dock: { flexDirection: 'row', gap: 10 },
-  choose: {
-    flex: 1,
+  dock: { flexDirection: 'row', gap: 8 },
+  dockStacked: { gap: 10 },
+  grow: { flex: 1 },
+  primary: {
     backgroundColor: color.cobalt,
     borderRadius: 3,
     paddingVertical: 16,
     alignItems: 'center',
   },
-  chooseLabel: { fontFamily: font.sans, fontSize: 15, fontWeight: '600', color: color.mat },
-  callsButton: {
+  primaryLabel: { fontFamily: font.sans, fontSize: 15, fontWeight: '600', color: color.mat },
+  secondary: {
     backgroundColor: color.mat,
     borderRadius: 3,
     paddingVertical: 16,
-    paddingHorizontal: 26,
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: color.rule,
   },
-  callsLabel: { fontFamily: font.sans, fontSize: 15, fontWeight: '600', color: color.ink },
+  compact: {
+    backgroundColor: color.mat,
+    borderRadius: 3,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: color.rule,
+  },
+  secondaryLabel: { fontFamily: font.sans, fontSize: 15, fontWeight: '600', color: color.ink },
   pressedCobalt: { backgroundColor: color.cobaltDeep },
   pressedBone: { backgroundColor: color.wallDeep },
   dim: { opacity: 0.45 },
