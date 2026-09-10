@@ -1,0 +1,25 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.backgroundremoval'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.backgroundremoval"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  // Subject Segmentation is unbundled: the model ships through Google Play services.
+  implementation 'com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1'
+  // BitmapFactory does not apply EXIF orientation on its own.
+  implementation 'androidx.exifinterface:exifinterface:1.4.2'
+}

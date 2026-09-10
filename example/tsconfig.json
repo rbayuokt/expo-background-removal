@@ -1,0 +1,10 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@rbayuokt/expo-background-removal": ["../src/index"],
+      "@rbayuokt/expo-background-removal/*": ["../src/*"]
+    }
+  }
+}

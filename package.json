@@ -1,0 +1,106 @@
+{
+  "name": "@rbayuokt/expo-background-removal",
+  "version": "0.1.0",
+  "description": "Background removal and foreground subject extraction for Expo apps",
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
+  "scripts": {
+    "build": "node internal/module_scripts/build.js",
+    "clean": "node internal/module_scripts/clean.js",
+    "lint": "eslint src/",
+    "test": "node internal/module_scripts/test.js",
+    "example:ios": "npm install --prefix example && npm --prefix example run ios",
+    "example:android": "npm install --prefix example && npm --prefix example run android",
+    "prepare": "node internal/module_scripts/prepare.js",
+    "open:ios": "node internal/module_scripts/open-ios.js",
+    "open:android": "node internal/module_scripts/open-android.js"
+  },
+  "keywords": [
+    "background removal",
+    "background-removal",
+    "remove background",
+    "remove-background",
+    "background remover",
+    "react native background removal",
+    "expo background removal",
+    "image segmentation",
+    "subject segmentation",
+    "subject extraction",
+    "foreground extraction",
+    "cutout",
+    "transparent png",
+    "photo editing",
+    "product photo",
+    "vision",
+    "visionkit",
+    "subject lifting",
+    "mlkit",
+    "ml-kit",
+    "react-native",
+    "expo",
+    "expo-modules",
+    "ios",
+    "android",
+    "expo-background-removal",
+    "ExpoBackgroundRemoval"
+  ],
+  "repository": "https://github.com/rbayuokt/expo-background-removal",
+  "bugs": {
+    "url": "https://github.com/rbayuokt/expo-background-removal/issues"
+  },
+  "author": "rbayuokt <rizkybayuoktavian@gmail.com> (https://github.com/rbayuokt)",
+  "license": "MIT",
+  "homepage": "https://github.com/rbayuokt/expo-background-removal#readme",
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@shopify/react-native-skia": "^2.4.18",
+    "@types/jest": "^29.2.1",
+    "@types/react": "~19.1.1",
+    "babel-preset-expo": "~55.0.8",
+    "eslint": "~9.39.4",
+    "eslint-config-universe": "^15.0.3",
+    "expo": "^55.0.31",
+    "jest": "^29.7.0",
+    "jest-expo": "~55.0.9",
+    "prettier": "^3.0.0",
+    "react-native": "0.83.10",
+    "react-native-reanimated": "^4.2.1",
+    "react-native-worklets": "^0.7.4",
+    "typescript": "^5.9.2"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "roots": [
+      "<rootDir>/src"
+    ]
+  },
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*",
+    "@shopify/react-native-skia": ">=2.0.0",
+    "react-native-reanimated": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@shopify/react-native-skia": {
+      "optional": true
+    },
+    "react-native-reanimated": {
+      "optional": true
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "default": "./build/index.js"
+    },
+    "./effects": {
+      "types": "./build/effects/index.d.ts",
+      "default": "./build/effects/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
