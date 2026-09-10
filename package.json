@@ -11,6 +11,7 @@
     "test": "node internal/module_scripts/test.js",
     "example:ios": "npm install --prefix example && npm --prefix example run ios",
     "example:android": "npm install --prefix example && npm --prefix example run android",
+    "example:prebuild": "npm --prefix example run prebuild",
     "prepare": "node internal/module_scripts/prepare.js",
     "open:ios": "node internal/module_scripts/open-ios.js",
     "open:android": "node internal/module_scripts/open-android.js"

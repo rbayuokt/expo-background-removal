@@ -77,9 +77,27 @@ reveal.current?.snap();    // subject too
 reveal.current?.reset();   // back to the photo
 ```
 
-Pass `result` when the app already ran `segmentImage()` and wants the reveal for that exact
-output, instead of segmenting twice. `Disintegrate` and `Scanner` are exported as well, for
-driving the layers from your own shared values.
+| Prop | Default | Does |
+| --- | --- | --- |
+| `source` | required | Local image URI, any format the OS decodes |
+| `result` | none | A `segmentImage()` output to reveal instead of segmenting again |
+| `busy` | `false` | Show the scan while the app runs its own call |
+| `autoRun` | `true` | Segment as soon as `source` is set |
+| `autoPlay` | `true` | Play as soon as the layers decode |
+| `duration` | `2600` | Dissolve length in ms |
+| `maxDimension` | `1600` | Longest edge before segmentation |
+| `fit` | `contain` | `cover` bleeds to the edges and crops |
+| `glow` | `true` | Warm bloom around the subject |
+| `onReady` | | Fires with the `segmentImage()` result |
+| `onRevealed` | | Fires when the background has finished crumbling |
+| `onError` | | Fires with a coded error |
+
+`result` and `busy` go together when the app drives the calls itself: pass `busy` while
+your own `segmentImage()` runs so the scan starts on the tap, then pass the result. Without
+`busy` the component sits idle, since `autoRun={false}` never starts its own pipeline.
+
+`Disintegrate` and `Scanner` are exported as well, for driving the layers from your own
+shared values.
 
 Skia and Reanimated are **optional peer dependencies**. Nothing in the main entry
 references them, so `removeBackground()` on its own adds no Skia to your bundle.
@@ -254,7 +272,11 @@ Four layers: a blurred copy of the plate so the end state is soft rather than a 
 sharp plate above it running an SkSL shader, a bloom that flashes around the silhouette,
 and the cutout on top. The bloom is a zero-offset drop shadow with `shadowOnly`, so it is
 the halo alone with no second copy of the subject in it; its blur grows as its opacity
-falls, so it reads as a pulse rather than a rim. It leads the dissolve by 260ms.
+falls, so it reads as a pulse rather than a rim. The subject scales 4.5% with it and
+settles back, which gives the pop. It leads the dissolve by 260ms.
+
+The scan stays on screen until the canvas has decoded, and brightens rather than dims, so
+the handover between the two has no step in it.
 
 The shader sweeps a front down the image, and behind that front each 2px grain is dropped
 at its own random moment, so the plate breaks into fine speckle instead of fading as a
@@ -282,6 +304,7 @@ your Xcode is new enough.
 | `npm run test` | Jest |
 | `npm run example:ios` | Install the example and run it on iOS |
 | `npm run example:android` | Same for Android |
+| `npm run example:prebuild` | Regenerate the example's native projects |
 | `npm run open:ios` | Open `example/ios` in Xcode |
 | `npm run open:android` | Open `example/android` in Android Studio |
 
@@ -299,6 +322,8 @@ Or from inside `example` itself:
 | Command | Does |
 | --- | --- |
 | `npm run setup` | Build the module, then install the example's dependencies |
+| `npm run prebuild` | Regenerate `ios/` and `android/`, and install pods |
+| `npm run prebuild:clean` | Delete them first, then regenerate |
 | `npm run ios` | Rebuild the module, then `expo run:ios` |
 | `npm run android` | Rebuild the module, then `expo run:android` |
 | `npm start` | Metro only, for JS-only changes |
@@ -309,16 +334,44 @@ never run against a stale copy of the module's JavaScript.
 The example depends on the module as `"@rbayuokt/expo-background-removal": "file:.."`,
 which is what puts it in `node_modules` for autolinking and Metro to find. `example/ios`
 and `example/android` are not committed, so the first run regenerates them with prebuild,
-which also installs pods. Nothing in there is hand written, so `npx expo prebuild --clean`
-inside `example` is always safe: the module's native code lives in `ios/` and `android/` at
-the repo root.
+which also installs pods.
 
-The app picks a photo, normalises it through `toPng` so every layer is Skia-loadable, and
-runs each call from a sheet. Results appear as specimens on a checkerboard, and each call
+The app takes a photo or picks one from the library, normalises it through `toPng` so every
+layer is Skia-loadable, and runs each call from a sheet. Results appear as specimens on a checkerboard, and each call
 logs its timing to the console.
 
 Vision needs a real device: the request has no CPU path, so `removeBackground()` on the iOS
 Simulator always rejects with `SEGMENTATION_FAILED`.
+
+## When to rebuild
+
+Editing Swift or Kotlin inside the module needs a native build, not a Metro reload:
+
+```bash
+cd example
+npm run ios          # or npm run android
+```
+
+Adding or removing a native file also needs `npx pod-install` before that build. The
+podspec's `source_files` glob is resolved at install time, so Xcode will not see a new
+`.swift` until pods are reinstalled.
+
+Changing `example/app.json` needs a prebuild, since that is what writes `Info.plist`, the
+Android manifest and the Podfile:
+
+```bash
+cd example
+npm run prebuild         # regenerates ios/ and android/, runs pod install
+npm run prebuild:clean   # deletes them first
+```
+
+Or `npm run example:prebuild` from the repo root. `prebuild:clean` is always safe here.
+`example/ios` and `example/android` are generated output and are not committed, and the
+module's own native code lives in `ios/` and `android/` at the repo root, which prebuild
+never touches.
+
+JavaScript changes need neither: `npx expo start -c` is enough.
+
 
 ---
 

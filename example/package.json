@@ -20,6 +20,8 @@
   "scripts": {
     "start": "expo start",
     "setup": "npm --prefix .. run prepare && npm install",
+    "prebuild": "expo prebuild",
+    "prebuild:clean": "expo prebuild --clean",
     "android": "npm --prefix .. run prepare && expo run:android",
     "ios": "npm --prefix .. run prepare && expo run:ios",
     "web": "expo start --web"

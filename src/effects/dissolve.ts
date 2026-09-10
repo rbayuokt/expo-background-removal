@@ -44,6 +44,8 @@ half4 main(float2 xy) {
   float d = band - (progress * 1.6 - 0.3);
   float sheen = exp(-(d * d) / 0.0022);
 
-  return color * 0.72 + color * sheen * 1.5 + half4(sheen * 0.18);
+  // Brightens only. Dimming the plate would step back to full brightness the moment the
+  // scan hands over to the reveal, which reads as a flash.
+  return color + color * sheen * 0.85 + half4(sheen * 0.10);
 }
 `)!;

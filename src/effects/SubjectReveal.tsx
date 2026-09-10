@@ -7,7 +7,13 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { runOnJS, useSharedValue, withDelay, withSequence, withTiming } from 'react-native-reanimated';
+import {
+  runOnJS,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { Disintegrate } from './Disintegrate';
 import { Scanner } from './Scanner';
@@ -27,6 +33,8 @@ export type SubjectRevealProps = {
   maxDimension?: number;
   /** Segment as soon as `source` is set. Set false to wait for `run()`. Defaults to true. */
   autoRun?: boolean;
+  /** Show the scan while the app runs its own call, rather than this component's. */
+  busy?: boolean;
   /** Play the reveal as soon as the layers are decoded. Defaults to true. */
   autoPlay?: boolean;
   /** Dissolve length in ms. Defaults to 2600. */
@@ -66,6 +74,7 @@ export const SubjectReveal = forwardRef<SubjectRevealHandle, SubjectRevealProps>
       result: providedResult,
       maxDimension = 1600,
       autoRun = true,
+      busy = false,
       autoPlay = true,
       duration = 2600,
       fit = 'contain',
@@ -87,7 +96,9 @@ export const SubjectReveal = forwardRef<SubjectRevealHandle, SubjectRevealProps>
      *  swapped in halfway through a reveal. */
     const [plate, setPlate] = useState<string | null>(null);
     const [ownResult, setOwnResult] = useState<SegmentationResult | null>(null);
-    const [working, setWorking] = useState(false);
+    const [segmenting, setSegmenting] = useState(false);
+    /** The canvas has decoded its layers and can draw this run. */
+    const [armed, setArmed] = useState(false);
     const [runId, setRunId] = useState(0);
 
     const result = providedResult ?? ownResult;
@@ -132,7 +143,8 @@ export const SubjectReveal = forwardRef<SubjectRevealHandle, SubjectRevealProps>
       reset();
       setPlate(null);
       setOwnResult(null);
-      setWorking(false);
+      setSegmenting(false);
+      setArmed(false);
 
       toPng(source, { maxDimension })
         .then((normalised) => {
@@ -155,17 +167,18 @@ export const SubjectReveal = forwardRef<SubjectRevealHandle, SubjectRevealProps>
       if (!plate) {
         return;
       }
-      setWorking(true);
+      setSegmenting(true);
       try {
         const segmented = await segmentImage(plate, { maxDimension });
         reset();
+        setArmed(false);
         setOwnResult(segmented);
         setRunId((id) => id + 1);
         onReady?.(segmented);
       } catch (error) {
         onError?.(error as Error);
       } finally {
-        setWorking(false);
+        setSegmenting(false);
       }
     }, [plate, maxDimension]);
 
@@ -179,6 +192,7 @@ export const SubjectReveal = forwardRef<SubjectRevealHandle, SubjectRevealProps>
     useEffect(() => {
       if (providedResult) {
         reset();
+        setArmed(false);
         setRunId((id) => id + 1);
       }
     }, [providedResult]);
@@ -200,33 +214,52 @@ export const SubjectReveal = forwardRef<SubjectRevealHandle, SubjectRevealProps>
     };
 
     // Hold the reveal until both the plate and a result exist, so no layer appears
-    // mid-animation.
-    const revealing = result != null && plate != null;
+    // mid-animation. Work in flight wins, so a new call replaces the previous reveal.
+    const scanning = busy || segmenting;
+    const revealing = !scanning && result != null && plate != null;
+    // Keep the scan up until the canvas is ready, or the plain photo shows through the
+    // gap between them and the switch reads as a flash.
+    const showScan = scanning || (revealing && !armed);
+
+    const arm = useCallback(() => {
+      setArmed(true);
+      if (autoPlay) {
+        play();
+      }
+    }, [autoPlay, play]);
 
     return (
       <View style={style} onLayout={onLayout}>
-        {size == null ? null : revealing ? (
-          <Disintegrate
-            key={runId}
-            dustUri={result.backgroundUri ?? plate}
-            keepUri={result.foregroundUri}
-            width={size.width}
-            height={size.height}
-            dust={bgDust}
-            keepDust={fgDust}
-            pulse={pulse}
-            fit={fit}
-            glow={glow}
-            onReady={autoPlay ? play : undefined}
-          />
-        ) : working ? (
-          <Scanner uri={plate ?? source} width={size.width} height={size.height} fit={fit} />
-        ) : (
-          <Image
-            source={{ uri: plate ?? source }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="contain"
-          />
+        {size == null ? null : (
+          <>
+            {revealing ? (
+              <Disintegrate
+                key={runId}
+                dustUri={result.backgroundUri ?? plate}
+                keepUri={result.foregroundUri}
+                width={size.width}
+                height={size.height}
+                dust={bgDust}
+                keepDust={fgDust}
+                pulse={pulse}
+                fit={fit}
+                glow={glow}
+                onReady={arm}
+              />
+            ) : (
+              <Image
+                source={{ uri: plate ?? source }}
+                style={StyleSheet.absoluteFill}
+                resizeMode={fit}
+              />
+            )}
+
+            {showScan ? (
+              <View style={StyleSheet.absoluteFill}>
+                <Scanner uri={plate ?? source} width={size.width} height={size.height} fit={fit} />
+              </View>
+            ) : null}
+          </>
         )}
       </View>
     );
