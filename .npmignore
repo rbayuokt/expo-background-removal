@@ -11,5 +11,22 @@ __tests__
 /internal/module_scripts/
 /android/src/androidTest/
 /android/src/test/
-/android/build/
 /example/
+
+# README images, served from the repo by npm's relative link rewriting
+/docs/
+
+# Native build output, rebuilt inside the consumer's project
+/android/build/
+/android/.gradle/
+/android/.cxx/
+/ios/build/
+/ios/Pods/
+/ios/*.xcworkspace
+/ios/*.xcodeproj/xcuserdata/
+
+# Never publishable
+.DS_Store
+*.log
+.env
+.env.*

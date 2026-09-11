@@ -38,6 +38,5 @@
   "exclude": [
     "**/__mocks__/*",
     "**/__tests__/*"
-  ],
-  "extends": "expo/tsconfig.base"
+  ]
 }
