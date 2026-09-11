@@ -1,3 +1,5 @@
+![@rbayuokt/expo-background-removal](docs/expo-background-removal.png)
+
 # @rbayuokt/expo-background-removal
 
 Cut the subject out of a photo on device and get back a transparent PNG. Point it at a
@@ -10,6 +12,8 @@ Segmentation. Both target general objects (shoes, bags, bottles, furniture), not
 people specifically, and both return separate instances when there is more than one
 subject in frame.
 
+![Removing a background on iOS and Android](docs/demo.gif)
+
 ## Install
 
 ```bash
@@ -21,8 +25,8 @@ npx expo run:ios         # or run:android
 There is native code here, so it does not run in Expo Go. Use a development build.
 
 If your app already has an `ios/` directory, `expo run:ios` will not pick up the new pod
-on its own: CocoaPods is driven by prebuild, not by `run`. Run `npx expo prebuild` or
-`npx pod-install` once after installing.
+on its own: CocoaPods is driven by prebuild, not by `run`. Run `npx expo prebuild` once
+after installing.
 
 Autolinking finds the module from the scope on its own. The Gradle project is named after
 the scope too, so an Android task is `:rbayuokt-expo-background-removal:compileDebugKotlin`.
@@ -352,7 +356,7 @@ cd example
 npm run ios          # or npm run android
 ```
 
-Adding or removing a native file also needs `npx pod-install` before that build. The
+Adding or removing a native file also needs `npm run prebuild` before that build. The
 podspec's `source_files` glob is resolved at install time, so Xcode will not see a new
 `.swift` until pods are reinstalled.
 
